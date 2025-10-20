@@ -1,8 +1,5 @@
 using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
-using RabbitMQ.Client;
 
 namespace Producer.Controllers;
 
@@ -24,15 +21,18 @@ public class WeatherForecastController : ControllerBase
     "Scorching",
   ];
 
-  private readonly IChannel _channel;
+  private readonly IWeatherPublisher _weatherPublisher;
   private readonly ILogger<WeatherForecastController> _logger;
 
-  public WeatherForecastController(IChannel channel, ILogger<WeatherForecastController> logger)
+  public WeatherForecastController(
+    IWeatherPublisher weatherPublisher,
+    ILogger<WeatherForecastController> logger
+  )
   {
-    ArgumentNullException.ThrowIfNull(channel);
+    ArgumentNullException.ThrowIfNull(weatherPublisher);
     ArgumentNullException.ThrowIfNull(logger);
 
-    _channel = channel;
+    _weatherPublisher = weatherPublisher;
     _logger = logger;
   }
 
@@ -49,37 +49,12 @@ public class WeatherForecastController : ControllerBase
       })
       .ToArray();
 
-    var basicProperties = new BasicProperties { DeliveryMode = DeliveryModes.Persistent };
-
-    _channel.BasicReturnAsync += async (_, args) =>
+    using (var cancellationTokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
     {
-      _logger.LogError(
-        message: "RETURN {EventReplyCode} {EventReplyText} rk={EventRoutingKey}",
-        args.ReplyCode,
-        args.ReplyText,
-        args.RoutingKey
-      );
-
-      await Task.CompletedTask.ConfigureAwait(false);
-    };
-
-    var json = JsonSerializer.Serialize(forecast);
-    var payload = Encoding.UTF8.GetBytes(json);
-
-    _logger.LogDebug("Publishing weather forecast to queue.");
-
-    await _channel
-      .BasicPublishAsync(
-        string.Empty,
-        "weather",
-        true,
-        basicProperties,
-        payload,
-        HttpContext.RequestAborted
-      )
-      .ConfigureAwait(false);
-
-    _logger.LogDebug("Published weather forecast to queue.");
+      await _weatherPublisher
+        .PublishForecastAsync(forecast, cancellationTokenSource.Token)
+        .ConfigureAwait(false);
+    }
 
     return Ok(forecast);
   }

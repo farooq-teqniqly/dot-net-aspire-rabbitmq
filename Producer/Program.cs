@@ -48,6 +48,8 @@ public class Program
       return channel;
     });
 
+    builder.Services.AddSingleton<IWeatherPublisher, WeatherPublisher>();
+
     var app = builder.Build();
 
     app.MapDefaultEndpoints();
