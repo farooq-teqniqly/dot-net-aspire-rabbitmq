@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using RabbitMQ.Client;
 
 namespace Consumer;
@@ -41,6 +42,13 @@ public class Program
       channel.BasicQosAsync(0, 32, false).GetAwaiter().GetResult();
 
       return channel;
+    });
+
+    builder.Services.AddScoped<ConsumerActivity>(serviceProvider =>
+    {
+      var logger = serviceProvider.GetRequiredService<ILogger<ConsumerActivity>>();
+
+      return new ConsumerActivity(new ActivitySource("Consumer"), logger);
     });
 
     builder.Services.AddHostedService<WeatherConsumer>();

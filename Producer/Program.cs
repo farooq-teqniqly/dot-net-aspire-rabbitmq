@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using RabbitMQ.Client;
 
 namespace Producer;
@@ -48,7 +49,13 @@ public class Program
       return channel;
     });
 
-    builder.Services.AddSingleton<IWeatherPublisher, WeatherPublisher>();
+    builder.Services.AddScoped<PublisherActivity>(serviceProvider =>
+    {
+      var logger = serviceProvider.GetRequiredService<ILogger<PublisherActivity>>();
+      return new PublisherActivity(new ActivitySource("Publisher"), logger);
+    });
+
+    builder.Services.AddScoped<IWeatherPublisher, WeatherPublisher>();
 
     var app = builder.Build();
 

@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using RabbitMQ.Client.Exceptions;
@@ -9,15 +10,22 @@ namespace Consumer
   public sealed class WeatherConsumer : BackgroundService
   {
     private readonly IChannel _channel;
+    private readonly IServiceScopeFactory _serviceScope;
     private readonly ILogger<WeatherConsumer> _logger;
 
-    public WeatherConsumer(IChannel channel, ILogger<WeatherConsumer> logger)
+    public WeatherConsumer(
+      IChannel channel,
+      ILogger<WeatherConsumer> logger,
+      IServiceScopeFactory serviceScope
+    )
     {
       ArgumentNullException.ThrowIfNull(channel);
       ArgumentNullException.ThrowIfNull(logger);
+      ArgumentNullException.ThrowIfNull(serviceScope);
 
       _channel = channel;
       _logger = logger;
+      _serviceScope = serviceScope;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -35,36 +43,56 @@ namespace Consumer
         {
           if (!stoppingToken.IsCancellationRequested)
           {
-            _logger.LogInformation(
-              "Received {MessageId} (DeliveryTag={DeliveryTag}) from {Queue}.",
-              args.BasicProperties.MessageId,
-              args.DeliveryTag,
-              "weather"
-            );
-
-            if (args.BasicProperties.ContentType != "application/json")
+            using (var scope = _serviceScope.CreateScope())
             {
-              _logger.LogWarning(
-                "Message has an unprocessable content type of {ContentType}",
-                args.BasicProperties.ContentType
-              );
+              var consumerActivity = scope.ServiceProvider.GetRequiredService<ConsumerActivity>();
 
-              await NackMessage(args, stoppingToken).ConfigureAwait(false);
-              return;
+              await consumerActivity
+                .ConsumeAsync(
+                  "weather",
+                  args,
+                  async (activity, ct) =>
+                  {
+                    if (args.BasicProperties.ContentType != "application/json")
+                    {
+                      _logger.LogWarning(
+                        "Message has an unprocessable content type of {ContentType}",
+                        args.BasicProperties.ContentType
+                      );
+
+                      await NackMessage(args, ct).ConfigureAwait(false);
+                      return false;
+                    }
+
+                    var message = Encoding.UTF8.GetString(args.Body.ToArray());
+
+                    await HandleMessageAsync(message, ct).ConfigureAwait(false);
+
+                    await _channel.BasicAckAsync(args.DeliveryTag, false, ct).ConfigureAwait(false);
+
+                    _logger.LogInformation(
+                      "Processed {MessageId} successfully.",
+                      args.BasicProperties.MessageId
+                    );
+
+                    return true;
+                  },
+                  (activity, eventArgs) =>
+                  {
+                    activity.SetTag("messaging.rabbitmq.routing_key", eventArgs.RoutingKey);
+
+                    if (!string.IsNullOrEmpty(eventArgs.BasicProperties.CorrelationId))
+                    {
+                      activity.SetTag(
+                        "messaging.conversation_id",
+                        eventArgs.BasicProperties.CorrelationId
+                      );
+                    }
+                  },
+                  stoppingToken
+                )
+                .ConfigureAwait(false);
             }
-
-            var message = Encoding.UTF8.GetString(args.Body.ToArray());
-
-            await HandleMessageAsync(message, stoppingToken).ConfigureAwait(false);
-
-            await _channel
-              .BasicAckAsync(args.DeliveryTag, false, stoppingToken)
-              .ConfigureAwait(false);
-
-            _logger.LogInformation(
-              "Processed {MessageId} successfully.",
-              args.BasicProperties.MessageId
-            );
           }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -103,6 +131,11 @@ namespace Consumer
       await Task.Delay(Timeout.Infinite, stoppingToken).ConfigureAwait(false);
     }
 
+    private static async Task HandleMessageAsync(
+      string message,
+      CancellationToken cancellationToken
+    ) => await Task.Delay(TimeSpan.FromMilliseconds(100), cancellationToken).ConfigureAwait(false);
+
     private async Task NackMessage(BasicDeliverEventArgs args, CancellationToken stoppingToken)
     {
       try
@@ -116,10 +149,5 @@ namespace Consumer
         _logger.LogWarning("Failed to NACK message - channel may be closed.");
       }
     }
-
-    private static async Task HandleMessageAsync(
-      string message,
-      CancellationToken cancellationToken
-    ) => await Task.Delay(TimeSpan.FromMilliseconds(100), cancellationToken).ConfigureAwait(false);
   }
 }
