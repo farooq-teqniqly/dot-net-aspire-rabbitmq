@@ -1,3 +1,5 @@
+using RabbitMQ.Client;
+
 namespace Consumer;
 
 public class Program
@@ -13,16 +15,35 @@ public class Program
 
     if (builder.Environment.IsDevelopment())
     {
-      builder.AddRabbitMQClient(
-        "rabbitmq",
-        static settings =>
-        {
-          settings.DisableHealthChecks = false;
-          settings.DisableTracing = false;
-          settings.DisableAutoActivation = false;
-        }
-      );
+      builder.AddRabbitMQClient("rabbitmq");
     }
+
+    // Register RabbitMQ connection and channel
+    builder.Services.AddSingleton<IConnection>(serviceProvider =>
+    {
+      var connectionFactory = serviceProvider.GetRequiredService<IConnectionFactory>();
+      return connectionFactory.CreateConnectionAsync().GetAwaiter().GetResult();
+    });
+
+    builder.Services.AddSingleton<IChannel>(serviceProvider =>
+    {
+      var connection = serviceProvider.GetRequiredService<IConnection>();
+
+      var channel = connection.CreateChannelAsync().GetAwaiter().GetResult();
+
+      const string queueName = "weather";
+
+      channel
+        .QueueDeclareAsync(queueName, durable: true, exclusive: false, autoDelete: false)
+        .GetAwaiter()
+        .GetResult();
+
+      channel.BasicQosAsync(0, 32, false).GetAwaiter().GetResult();
+
+      return channel;
+    });
+
+    builder.Services.AddHostedService<WeatherConsumer>();
 
     var app = builder.Build();
 
