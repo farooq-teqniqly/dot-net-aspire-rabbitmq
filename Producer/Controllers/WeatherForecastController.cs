@@ -1,4 +1,6 @@
 using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using RabbitMQ.Client;
 
@@ -22,25 +24,22 @@ public class WeatherForecastController : ControllerBase
     "Scorching",
   ];
 
-  private readonly IConnection _rabbitMqConnection;
+  private readonly IChannel _channel;
   private readonly ILogger<WeatherForecastController> _logger;
 
-  public WeatherForecastController(
-    IConnection rabbitMqConnection,
-    ILogger<WeatherForecastController> logger
-  )
+  public WeatherForecastController(IChannel channel, ILogger<WeatherForecastController> logger)
   {
-    ArgumentNullException.ThrowIfNull(rabbitMqConnection);
+    ArgumentNullException.ThrowIfNull(channel);
     ArgumentNullException.ThrowIfNull(logger);
 
-    _rabbitMqConnection = rabbitMqConnection;
+    _channel = channel;
     _logger = logger;
   }
 
   [HttpGet(Name = "GetWeatherForecast")]
-  public IEnumerable<WeatherForecast> Get()
+  public async Task<ActionResult<WeatherForecast>> Get()
   {
-    return Enumerable
+    var forecast = Enumerable
       .Range(1, 5)
       .Select(index => new WeatherForecast
       {
@@ -49,5 +48,39 @@ public class WeatherForecastController : ControllerBase
         Summary = _summaries[RandomNumberGenerator.GetInt32(_summaries.Length)],
       })
       .ToArray();
+
+    var basicProperties = new BasicProperties { DeliveryMode = DeliveryModes.Persistent };
+
+    _channel.BasicReturnAsync += async (_, args) =>
+    {
+      _logger.LogError(
+        message: "RETURN {EventReplyCode} {EventReplyText} rk={EventRoutingKey}",
+        args.ReplyCode,
+        args.ReplyText,
+        args.RoutingKey
+      );
+
+      await Task.CompletedTask.ConfigureAwait(false);
+    };
+
+    var json = JsonSerializer.Serialize(forecast);
+    var payload = Encoding.UTF8.GetBytes(json);
+
+    _logger.LogDebug("Publishing weather forecast to queue.");
+
+    await _channel
+      .BasicPublishAsync(
+        string.Empty,
+        "weather",
+        true,
+        basicProperties,
+        payload,
+        HttpContext.RequestAborted
+      )
+      .ConfigureAwait(false);
+
+    _logger.LogDebug("Published weather forecast to queue.");
+
+    return Ok(forecast);
   }
 }
