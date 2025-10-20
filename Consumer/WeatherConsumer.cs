@@ -1,6 +1,8 @@
 using System.Text;
+using System.Text.Json;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
+using RabbitMQ.Client.Exceptions;
 
 namespace Consumer
 {
@@ -20,8 +22,6 @@ namespace Consumer
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-      _logger.LogDebug($"Started {nameof(ExecuteAsync)}.");
-
       if (stoppingToken.IsCancellationRequested)
       {
         return;
@@ -33,47 +33,66 @@ namespace Consumer
       {
         try
         {
-          var message = Encoding.UTF8.GetString(args.Body.ToArray());
-
           if (!stoppingToken.IsCancellationRequested)
           {
+            _logger.LogInformation(
+              "Received {MessageId} (DeliveryTag={DeliveryTag}) from {Queue}.",
+              args.BasicProperties.MessageId,
+              args.DeliveryTag,
+              "weather"
+            );
+
+            if (args.BasicProperties.ContentType != "application/json")
+            {
+              _logger.LogWarning(
+                "Message has an unprocessable content type of {ContentType}",
+                args.BasicProperties.ContentType
+              );
+
+              await NackMessage(args, stoppingToken).ConfigureAwait(false);
+              return;
+            }
+
+            var message = Encoding.UTF8.GetString(args.Body.ToArray());
+
             await HandleMessageAsync(message, stoppingToken).ConfigureAwait(false);
 
             await _channel
               .BasicAckAsync(args.DeliveryTag, false, stoppingToken)
               .ConfigureAwait(false);
+
+            _logger.LogInformation(
+              "Processed {MessageId} successfully.",
+              args.BasicProperties.MessageId
+            );
           }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
           _logger.LogInformation("Message processing cancelled due to service shutdown.");
         }
-        catch (InvalidOperationException invalidOpException)
+        catch (JsonException ex)
         {
           _logger.LogError(
-            invalidOpException,
-            "Invalid operation during message processing (likely channel closed)."
+            ex,
+            "JSON deserialization failed. MessageId={MessageId}",
+            args.BasicProperties.MessageId
           );
-        }
-        catch (ArgumentException argException)
-        {
-          _logger.LogError(argException, "Invalid argument during message processing.");
 
-          try
-          {
-            await _channel
-              .BasicNackAsync(args.DeliveryTag, false, false, stoppingToken)
-              .ConfigureAwait(false);
-          }
-          catch (InvalidOperationException)
-          {
-            _logger.LogWarning("Failed to NACK message - channel may be closed.");
-          }
+          await NackMessage(args, stoppingToken).ConfigureAwait(false);
         }
-        catch (Exception exception)
+        catch (AlreadyClosedException ex)
         {
-          _logger.LogError(exception, "Unexpected error during message processing.");
-          throw;
+          _logger.LogWarning(ex, "Channel closed while processing message.");
+        }
+        catch (OperationInterruptedException ex)
+        {
+          _logger.LogError(
+            ex,
+            "RabbitMQ channel interrupted. Code={Code}, Text={Text}",
+            ex.ShutdownReason?.ReplyCode,
+            ex.ShutdownReason?.ReplyText
+          );
         }
       };
 
@@ -82,14 +101,25 @@ namespace Consumer
         .ConfigureAwait(false);
 
       await Task.Delay(Timeout.Infinite, stoppingToken).ConfigureAwait(false);
-
-      _logger.LogDebug($"Finished {nameof(ExecuteAsync)}.");
     }
 
-    private Task HandleMessageAsync(string message, CancellationToken cancellationToken)
+    private async Task NackMessage(BasicDeliverEventArgs args, CancellationToken stoppingToken)
     {
-      _logger.LogDebug("Message received: {Message}", message);
-      return Task.CompletedTask;
+      try
+      {
+        await _channel
+          .BasicNackAsync(args.DeliveryTag, false, false, stoppingToken)
+          .ConfigureAwait(false);
+      }
+      catch (InvalidOperationException)
+      {
+        _logger.LogWarning("Failed to NACK message - channel may be closed.");
+      }
     }
+
+    private static async Task HandleMessageAsync(
+      string message,
+      CancellationToken cancellationToken
+    ) => await Task.Delay(TimeSpan.FromMilliseconds(100), cancellationToken).ConfigureAwait(false);
   }
 }

@@ -1,6 +1,8 @@
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using RabbitMQ.Client;
+using RabbitMQ.Client.Exceptions;
 
 namespace Producer
 {
@@ -23,7 +25,14 @@ namespace Producer
       CancellationToken cancellationToken = default
     )
     {
-      var basicProperties = new BasicProperties { DeliveryMode = DeliveryModes.Persistent };
+      var basicProperties = new BasicProperties
+      {
+        DeliveryMode = DeliveryModes.Persistent,
+        ContentType = "application/json",
+        MessageId = Guid.CreateVersion7().ToString(),
+        Timestamp = new AmqpTimestamp(DateTimeOffset.UtcNow.ToUnixTimeSeconds()),
+        Type = "WeatherForecastBatch",
+      };
 
       _channel.BasicReturnAsync += async (_, args) =>
       {
@@ -40,20 +49,35 @@ namespace Producer
       var json = JsonSerializer.Serialize(weatherForecast);
       var payload = Encoding.UTF8.GetBytes(json);
 
-      _logger.LogDebug("Publishing weather forecast to queue.");
+      try
+      {
+        await _channel
+          .BasicPublishAsync(
+            string.Empty,
+            "weather",
+            true,
+            basicProperties,
+            payload,
+            cancellationToken
+          )
+          .ConfigureAwait(false);
 
-      await _channel
-        .BasicPublishAsync(
-          string.Empty,
-          "weather",
-          true,
-          basicProperties,
-          payload,
-          cancellationToken
-        )
-        .ConfigureAwait(false);
-
-      _logger.LogDebug("Published weather forecast to queue.");
+        _logger.LogInformation(
+          "Published message {MessageId} ({ContentType}) to {RoutingKey}.",
+          basicProperties.MessageId,
+          basicProperties.ContentType,
+          "weather"
+        );
+      }
+      catch (PublishException publishException)
+      {
+        _logger.LogError(
+          publishException,
+          "Publish failed for {MessageId} to {RoutingKey}.",
+          basicProperties.MessageId,
+          "weather"
+        );
+      }
     }
   }
 }
