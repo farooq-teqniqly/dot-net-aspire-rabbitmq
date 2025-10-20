@@ -1,9 +1,10 @@
 using System.Diagnostics;
+using DotNetAspireRabbitMq.ServiceDefaults;
 using RabbitMQ.Client;
 
 namespace Producer;
 
-public class Program
+internal sealed class Program
 {
   public static void Main(string[] args)
   {
@@ -20,7 +21,6 @@ public class Program
       builder.AddRabbitMQClient("rabbitmq");
     }
 
-    // Register RabbitMQ connection and channel
     builder.Services.AddSingleton<IConnection>(serviceProvider =>
     {
       var connectionFactory = serviceProvider.GetRequiredService<IConnectionFactory>();
@@ -52,7 +52,7 @@ public class Program
     builder.Services.AddScoped<PublisherActivity>(serviceProvider =>
     {
       var logger = serviceProvider.GetRequiredService<ILogger<PublisherActivity>>();
-      return new PublisherActivity(new ActivitySource("Publisher"), logger);
+      return new PublisherActivity(new ActivitySource(builder.Environment.ApplicationName), logger);
     });
 
     builder.Services.AddScoped<IWeatherPublisher, WeatherPublisher>();
