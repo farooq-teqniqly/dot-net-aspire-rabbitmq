@@ -1,7 +1,20 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
-builder.AddProject<Projects.Producer>("producer");
+var username = builder.AddParameter("RabbitMQ-username", secret: true);
+var password = builder.AddParameter("RabbitMQ-password", secret: true);
 
-builder.AddProject<Projects.Consumer>("consumer");
+var rabbitMq = builder
+  .AddRabbitMQ("rabbitmq", username, password)
+  .WithDataVolume(isReadOnly: false)
+  .WithLifetime(ContainerLifetime.Persistent);
+
+if (builder.ExecutionContext.IsRunMode)
+{
+  rabbitMq.WithManagementPlugin();
+}
+
+builder.AddProject<Projects.Producer>("producer").WithReference(rabbitMq).WaitFor(rabbitMq);
+
+builder.AddProject<Projects.Consumer>("consumer").WithReference(rabbitMq).WaitFor(rabbitMq);
 
 builder.Build().Run();
