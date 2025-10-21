@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Producer.Entities;
 
@@ -19,7 +19,6 @@ namespace Producer.Database.Configurations
       );
 
       builder.Property(m => m.OccurredOnUtc).IsRequired();
-      builder.Property(m => m.ProcessedOnUtc).IsRequired();
 
       builder
         .HasIndex(m => new { m.OccurredOnUtc, m.ProcessedOnUtc })

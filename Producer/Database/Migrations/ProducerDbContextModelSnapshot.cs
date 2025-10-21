@@ -3,20 +3,17 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
-using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Producer.Database;
 
 #nullable disable
 
-namespace Producer.Database.Migrations.Producer
+namespace Producer.Database.Migrations
 {
     [DbContext(typeof(ProducerDbContext))]
-    [Migration("20251021044437_Add_Outbox")]
-    partial class Add_Outbox
+    partial class ProducerDbContextModelSnapshot : ModelSnapshot
     {
-        /// <inheritdoc />
-        protected override void BuildTargetModel(ModelBuilder modelBuilder)
+        protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -27,9 +24,9 @@ namespace Producer.Database.Migrations.Producer
 
             modelBuilder.Entity("Producer.Entities.OutboxMessage", b =>
                 {
-                    b.Property<string>("Id")
+                    b.Property<Guid>("Id")
                         .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)")
+                        .HasColumnType("uniqueidentifier")
                         .HasColumnName("id");
 
                     b.Property<string>("Content")
@@ -45,7 +42,7 @@ namespace Producer.Database.Migrations.Producer
                         .HasColumnType("datetimeoffset")
                         .HasColumnName("occurred_on_utc");
 
-                    b.Property<DateTimeOffset>("ProcessedOnUtc")
+                    b.Property<DateTimeOffset?>("ProcessedOnUtc")
                         .HasColumnType("datetimeoffset")
                         .HasColumnName("processed_on_utc");
 

@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using DotNetAspireRabbitMq.ServiceDefaults;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Migrations;
 using Producer.Database;
 using RabbitMQ.Client;
 
@@ -52,14 +51,6 @@ internal sealed class Program
       return channel;
     });
 
-    builder.Services.AddScoped<PublisherActivity>(serviceProvider =>
-    {
-      var logger = serviceProvider.GetRequiredService<ILogger<PublisherActivity>>();
-      return new PublisherActivity(new ActivitySource(builder.Environment.ApplicationName), logger);
-    });
-
-    builder.Services.AddScoped<IWeatherPublisher, WeatherPublisher>();
-
     builder.Services.AddDbContext<ProducerDbContext>(opts =>
     {
       var connectionString =
@@ -80,6 +71,17 @@ internal sealed class Program
       settings.DisableHealthChecks = false;
       settings.DisableRetry = true;
     });
+
+    builder.AddSqlServerClient("producerdb");
+
+    builder.Services.AddScoped<PublisherActivity>(serviceProvider =>
+    {
+      var logger = serviceProvider.GetRequiredService<ILogger<PublisherActivity>>();
+      return new PublisherActivity(new ActivitySource(builder.Environment.ApplicationName), logger);
+    });
+
+    builder.Services.AddScoped<IWeatherPublisher, WeatherPublisher>();
+    builder.Services.AddScoped<IOutboxRepository, OutboxRepository>();
 
     var app = builder.Build();
 
