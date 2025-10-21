@@ -34,6 +34,9 @@ internal sealed class Program
 
     builder.Services.Configure<PublisherOptions>(opts =>
     {
+      var defaultPeriod = TimeSpan.FromSeconds(10);
+      var defaultPublisherConfirmsTimeout = TimeSpan.FromSeconds(5);
+
       var section = builder.Configuration.GetSection(PublisherOptions.SectionName);
 
       if (section.Exists())
@@ -44,19 +47,30 @@ internal sealed class Program
         {
           opts.QueueName = queueName;
         }
+
+        if (opts.Period <= TimeSpan.Zero)
+        {
+          opts.Period = defaultPeriod;
+        }
+
+        if (opts.PublisherConfirmsTimeout <= TimeSpan.Zero)
+        {
+          opts.PublisherConfirmsTimeout = defaultPublisherConfirmsTimeout;
+        }
       }
       else
       {
-        opts.Period = TimeSpan.FromSeconds(60);
+        opts.Period = defaultPeriod;
+        opts.PublisherConfirmsTimeout = defaultPublisherConfirmsTimeout;
         opts.QueueName = queueName;
         queueName = opts.QueueName;
       }
     });
 
-    var defaultBatchSize = 100;
-
     builder.Services.Configure<OutboxOptions>(opts =>
     {
+      var defaultBatchSize = 100;
+
       var section = builder.Configuration.GetSection(OutboxOptions.SectionName);
 
       if (section.Exists())

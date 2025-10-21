@@ -99,7 +99,7 @@ namespace Producer
 
                 // Wait for confirmation with timeout
                 var confirmed = await confirmationTask
-                  .WaitAsync(TimeSpan.FromSeconds(30), ct)
+                  .WaitAsync(_publisherOptions.PublisherConfirmsTimeout, ct)
                   .ConfigureAwait(false);
 
                 if (!confirmed)
