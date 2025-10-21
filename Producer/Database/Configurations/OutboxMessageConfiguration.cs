@@ -9,8 +9,7 @@ namespace Producer.Database.Configurations
     public void Configure(EntityTypeBuilder<OutboxMessage> builder)
     {
       builder.HasKey(m => m.Id);
-      builder.Property(m => m.Id).HasMaxLength(32).ValueGeneratedNever();
-      builder.Property(m => m.Type).IsRequired().HasMaxLength(100);
+      builder.Property(m => m.Id).ValueGeneratedNever();
 
       builder.Property(m => m.Content).IsRequired().HasColumnType("nvarchar(max)");
 

@@ -25,15 +25,12 @@ namespace Producer
       var outboxMessage = new OutboxMessage
       {
         Id = Guid.CreateVersion7(),
-        Type =
-          typeof(T).FullName
-          ?? throw new InvalidOperationException($"Could not set {nameof(OutboxMessage.Type)}"),
         Content = JsonSerializer.Serialize(message),
         OccurredOnUtc = DateTimeOffset.UtcNow,
       };
 
       var sql =
-        "INSERT INTO dbo.outbox_messages (id, type, content, occurred_on_utc) VALUES (@Id, @Type, @Content, @OccurredOnUtc)";
+        "INSERT INTO dbo.outbox_messages (id, content, occurred_on_utc) VALUES (@Id, @Content, @OccurredOnUtc)";
 
       var rowsInserted = await _sqlConnection
         .ExecuteAsync(sql, outboxMessage)
@@ -57,12 +54,12 @@ namespace Producer
     )
     {
       var sql =
-        $"SELECT TOP ({limit}) id, type, content FROM dbo.outbox_messages WITH (READPAST) WHERE processed_on_utc IS NULL ORDER BY occurred_on_utc";
+        $"SELECT TOP ({limit}) id, content FROM dbo.outbox_messages WITH (READPAST) WHERE processed_on_utc IS NULL ORDER BY occurred_on_utc";
 
       _logger.LogInformation("Getting outbox messages. {CommandText}", sql);
 
-      var messages = await _sqlConnection
-        .QueryAsync<OutboxMessage>(sql, transaction: transaction)
+      var messages = await transaction
+        .Connection!.QueryAsync<OutboxMessage>(sql, transaction: transaction)
         .ConfigureAwait(false);
 
       return messages;
@@ -77,8 +74,8 @@ namespace Producer
       var sql =
         "UPDATE dbo.outbox_messages SET processed_on_utc = @ProcessedOnUtc, error = @Error WHERE id = @Id";
 
-      await _sqlConnection
-        .ExecuteAsync(
+      await transaction
+        .Connection!.ExecuteAsync(
           sql,
           new
           {
@@ -90,10 +87,7 @@ namespace Producer
         )
         .ConfigureAwait(false);
 
-      _logger.LogInformation(
-        "Marked outbox message as unprocessed. CommandText: {CommandText}",
-        sql
-      );
+      _logger.LogInformation("Marked outbox message as error. CommandText: {CommandText}", sql);
     }
 
     public async Task MarkAsProcessedAsync(Guid messageId, DbTransaction transaction)

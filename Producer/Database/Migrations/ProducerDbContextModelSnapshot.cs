@@ -25,7 +25,6 @@ namespace Producer.Database.Migrations
             modelBuilder.Entity("Producer.Entities.OutboxMessage", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasMaxLength(32)
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("id");
 
@@ -45,12 +44,6 @@ namespace Producer.Database.Migrations
                     b.Property<DateTimeOffset?>("ProcessedOnUtc")
                         .HasColumnType("datetimeoffset")
                         .HasColumnName("processed_on_utc");
-
-                    b.Property<string>("Type")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)")
-                        .HasColumnName("type");
 
                     b.HasKey("Id")
                         .HasName("pk_outbox_messages");
