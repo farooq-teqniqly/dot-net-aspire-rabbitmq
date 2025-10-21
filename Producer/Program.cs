@@ -2,6 +2,7 @@ using System.Diagnostics;
 using DotNetAspireRabbitMq.ServiceDefaults;
 using Microsoft.EntityFrameworkCore;
 using Producer.Database;
+using Producer.Settings;
 using RabbitMQ.Client;
 
 namespace Producer;
@@ -78,6 +79,20 @@ internal sealed class Program
     {
       var logger = serviceProvider.GetRequiredService<ILogger<PublisherActivity>>();
       return new PublisherActivity(new ActivitySource(builder.Environment.ApplicationName), logger);
+    });
+
+    builder.Services.Configure<PublisherOptions>(opts =>
+    {
+      var section = builder.Configuration.GetSection(PublisherOptions.SectionName);
+
+      if (section.Exists())
+      {
+        section.Bind(opts);
+      }
+      else
+      {
+        opts.Period = TimeSpan.FromSeconds(60);
+      }
     });
 
     builder.Services.AddHostedService<WeatherPublisher>();

@@ -1,5 +1,7 @@
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Options;
+using Producer.Settings;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using RabbitMQ.Client.Exceptions;
@@ -13,18 +15,22 @@ namespace Producer
     private readonly ILogger<WeatherPublisher> _logger;
     private readonly IServiceScopeFactory _serviceScopeFactory;
     private PublisherConfirmationTracker _confirmationTracker = null!;
+    private readonly PublisherOptions _publisherOptions;
 
     public WeatherPublisher(
+      IOptions<PublisherOptions> publisherOptions,
       IChannel channel,
       ILogger<WeatherPublisher> logger,
       IServiceScopeFactory serviceScopeFactory
     )
     {
+      ArgumentNullException.ThrowIfNull(publisherOptions);
       ArgumentNullException.ThrowIfNull(channel);
       ArgumentNullException.ThrowIfNull(logger);
       ArgumentNullException.ThrowIfNull(serviceScopeFactory);
 
       _channel = channel;
+      _publisherOptions = publisherOptions.Value;
       _logger = logger;
       _serviceScopeFactory = serviceScopeFactory;
 
@@ -182,7 +188,11 @@ namespace Producer
               }
               catch (InvalidOperationException exception)
               {
-                _logger.LogError(exception, "Failed to process outbox message.");
+                _logger.LogError(
+                  exception,
+                  "Failed to process outbox message {MessageId}.",
+                  message.Id
+                );
 
                 await outboxRepository
                   .MarkAsErrorAsync(message.Id, exception.Message)
@@ -190,19 +200,47 @@ namespace Producer
               }
               catch (JsonException exception)
               {
-                _logger.LogError(exception, "Failed to process outbox message.");
+                _logger.LogError(
+                  exception,
+                  "Failed to deserialize message {MessageId}.",
+                  message.Id
+                );
 
                 await outboxRepository
                   .MarkAsErrorAsync(message.Id, exception.Message)
                   .ConfigureAwait(false);
               }
+              catch (PublishException exception)
+              {
+                _logger.LogError(
+                  exception,
+                  "RabbitMQ publish failed for message {MessageId}.",
+                  message.Id
+                );
+
+                await outboxRepository
+                  .MarkAsErrorAsync(message.Id, exception.Message)
+                  .ConfigureAwait(false);
+              }
+              catch (Exception exception)
+              {
+                _logger.LogError(
+                  exception,
+                  "Unexpected error processing message {MessageId}.",
+                  message.Id
+                );
+
+                await outboxRepository
+                  .MarkAsErrorAsync(message.Id, exception.Message)
+                  .ConfigureAwait(false);
+              }
+
+              await unitOfWork.CommitAsync(stoppingToken).ConfigureAwait(false);
             }
-
-            await unitOfWork.CommitAsync(stoppingToken).ConfigureAwait(false);
           }
-        }
 
-        await Task.Delay(TimeSpan.FromSeconds(60), stoppingToken).ConfigureAwait(false);
+          await Task.Delay(_publisherOptions.Period, stoppingToken).ConfigureAwait(false);
+        }
       }
     }
 
