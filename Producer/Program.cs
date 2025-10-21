@@ -1,12 +1,15 @@
 using System.Diagnostics;
 using DotNetAspireRabbitMq.ServiceDefaults;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Migrations;
+using Producer.Database;
 using RabbitMQ.Client;
 
 namespace Producer;
 
 internal sealed class Program
 {
-  public static void Main(string[] args)
+  public static async Task Main(string[] args)
   {
     var builder = WebApplication.CreateBuilder(args);
 
@@ -57,6 +60,27 @@ internal sealed class Program
 
     builder.Services.AddScoped<IWeatherPublisher, WeatherPublisher>();
 
+    builder.Services.AddDbContext<ProducerDbContext>(opts =>
+    {
+      var connectionString =
+        builder.Configuration.GetConnectionString("producerdb")
+        ?? throw new InvalidOperationException("Database connection string was not specified.");
+
+      opts.UseSqlServer(connectionString).UseSnakeCaseNamingConvention();
+
+      if (builder.Environment.IsDevelopment())
+      {
+        opts.EnableSensitiveDataLogging();
+      }
+    });
+
+    builder.EnrichSqlServerDbContext<ProducerDbContext>(settings =>
+    {
+      settings.DisableTracing = false;
+      settings.DisableHealthChecks = false;
+      settings.DisableRetry = true;
+    });
+
     var app = builder.Build();
 
     app.MapDefaultEndpoints();
@@ -64,6 +88,7 @@ internal sealed class Program
     if (app.Environment.IsDevelopment())
     {
       app.MapOpenApi();
+      await app.ApplyMigrationsAsync();
     }
 
     app.UseHttpsRedirection();
@@ -72,6 +97,6 @@ internal sealed class Program
 
     app.MapControllers();
 
-    app.Run();
+    await app.RunAsync();
   }
 }
