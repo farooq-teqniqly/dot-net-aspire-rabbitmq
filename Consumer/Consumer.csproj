@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+
+  <ItemGroup>
+    <PackageReference Include="Aspire.RabbitMQ.Client.v7" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DotNetAspireRabbitMq.ServiceDefaults\DotNetAspireRabbitMq.ServiceDefaults.csproj" />
+  </ItemGroup>
+
+</Project>
