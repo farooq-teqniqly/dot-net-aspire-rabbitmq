@@ -39,6 +39,11 @@ internal sealed class Program
       if (section.Exists())
       {
         section.Bind(opts);
+
+        if (string.IsNullOrWhiteSpace(opts.QueueName))
+        {
+          opts.QueueName = queueName;
+        }
       }
       else
       {

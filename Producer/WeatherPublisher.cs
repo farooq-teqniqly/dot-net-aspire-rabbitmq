@@ -10,7 +10,6 @@ namespace Producer
 {
   internal sealed class WeatherPublisher : BackgroundService, IWeatherPublisher
   {
-    private const string _routingKey = "weather";
     private readonly IChannel _channel;
     private readonly ILogger<WeatherPublisher> _logger;
     private readonly IServiceScopeFactory _serviceScopeFactory;
@@ -45,6 +44,8 @@ namespace Producer
       CancellationToken cancellationToken = default
     )
     {
+      var routingKey = _publisherOptions.QueueName;
+
       await using (var scope = _serviceScopeFactory.CreateAsyncScope())
       {
         var publisherActivity = scope.ServiceProvider.GetRequiredService<PublisherActivity>();
@@ -82,14 +83,14 @@ namespace Producer
 
                 // Publish the message
                 await _channel
-                  .BasicPublishAsync(string.Empty, _routingKey, true, basicProperties, payload, ct)
+                  .BasicPublishAsync(string.Empty, routingKey, true, basicProperties, payload, ct)
                   .ConfigureAwait(false);
 
                 _logger.LogInformation(
                   "Published message {MessageId} ({ContentType}) to {RoutingKey}, awaiting confirmation...",
                   basicProperties.MessageId,
                   basicProperties.ContentType,
-                  _routingKey
+                  routingKey
                 );
 
                 // Wait for confirmation with timeout
@@ -137,7 +138,7 @@ namespace Producer
                   ex,
                   "Publish failed for {MessageId} to {RoutingKey}.",
                   basicProperties.MessageId,
-                  _routingKey
+                  routingKey
                 );
 
                 throw;
@@ -147,7 +148,7 @@ namespace Producer
             {
               activity.SetTag("messaging.system", "rabbitmq");
               activity.SetTag("messaging.destination_kind", "queue");
-              activity.SetTag("messaging.destination.name", _routingKey);
+              activity.SetTag("messaging.destination.name", routingKey);
               activity.SetTag("messaging.operation", "publish");
             },
             cancellationToken

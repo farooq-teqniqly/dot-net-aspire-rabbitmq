@@ -1,5 +1,7 @@
 using System.Text;
 using System.Text.Json;
+using Consumer.Settings;
+using Microsoft.Extensions.Options;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using RabbitMQ.Client.Exceptions;
@@ -8,20 +10,24 @@ namespace Consumer
 {
   public sealed class WeatherConsumer : BackgroundService
   {
+    private readonly ConsumerOptions _consumerOptions;
     private readonly IChannel _channel;
     private readonly IServiceScopeFactory _serviceScope;
     private readonly ILogger<WeatherConsumer> _logger;
 
     public WeatherConsumer(
+      IOptions<ConsumerOptions> consumerOptions,
       IChannel channel,
       ILogger<WeatherConsumer> logger,
       IServiceScopeFactory serviceScope
     )
     {
+      ArgumentNullException.ThrowIfNull(consumerOptions);
       ArgumentNullException.ThrowIfNull(channel);
       ArgumentNullException.ThrowIfNull(logger);
       ArgumentNullException.ThrowIfNull(serviceScope);
 
+      _consumerOptions = consumerOptions.Value;
       _channel = channel;
       _logger = logger;
       _serviceScope = serviceScope;
@@ -34,6 +40,7 @@ namespace Consumer
         return;
       }
 
+      var spanName = _consumerOptions.QueueName;
       var consumer = new AsyncEventingBasicConsumer(_channel);
 
       consumer.ReceivedAsync += async (_, args) =>
@@ -48,7 +55,7 @@ namespace Consumer
 
               await consumerActivity
                 .ConsumeAsync(
-                  "weather",
+                  spanName,
                   args,
                   async (activity, ct) =>
                   {
@@ -124,7 +131,7 @@ namespace Consumer
       };
 
       await _channel
-        .BasicConsumeAsync("weather", false, consumer, stoppingToken)
+        .BasicConsumeAsync(spanName, false, consumer, stoppingToken)
         .ConfigureAwait(false);
 
       await Task.Delay(Timeout.Infinite, stoppingToken).ConfigureAwait(false);
