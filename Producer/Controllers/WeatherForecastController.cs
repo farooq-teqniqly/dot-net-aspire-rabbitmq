@@ -49,7 +49,15 @@ public class WeatherForecastController : ControllerBase
       })
       .ToArray();
 
-    await _outboxRepository.AddToOutboxAsync(forecast).ConfigureAwait(false);
+    try
+    {
+        await _outboxRepository.AddToOutboxAsync(forecast).ConfigureAwait(false);
+    }
+    catch (Exception ex)
+    {
+        _logger.LogError(ex, "Failed to add weather forecast to outbox");
+        return StatusCode(500, "Failed to process request");
+    }
 
     return Ok(forecast);
   }
