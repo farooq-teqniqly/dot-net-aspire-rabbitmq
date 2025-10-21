@@ -81,6 +81,7 @@ internal sealed class Program
     });
 
     builder.Services.AddHostedService<WeatherPublisher>();
+    builder.Services.AddSingleton<PublisherConfirmationTracker>();
     builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
     builder.Services.AddScoped<IOutboxRepository, OutboxRepository>();
 
