@@ -58,7 +58,7 @@ namespace Consumer
           "Received {MessageId} (DeliveryTag={DeliveryTag}) from {Queue}.",
           eventArgs.BasicProperties.MessageId ?? "no message id",
           eventArgs.DeliveryTag,
-          "weather"
+          eventArgs.RoutingKey
         );
 
         if (activity is not null && enrich is not null)
