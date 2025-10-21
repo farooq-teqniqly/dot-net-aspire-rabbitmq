@@ -38,6 +38,8 @@ namespace Producer
           MessageId = Guid.CreateVersion7().ToString("N"),
         };
 
+        activity?.SetTag("messaging.message.id", basicProperties.MessageId);
+
         basicProperties.Headers ??= new Dictionary<string, object?>();
 
         var traceContext = new PropagationContext(

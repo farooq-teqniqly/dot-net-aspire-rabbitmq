@@ -134,7 +134,12 @@ namespace Consumer
     private static async Task HandleMessageAsync(
       string message,
       CancellationToken cancellationToken
-    ) => await Task.Delay(TimeSpan.FromMilliseconds(100), cancellationToken).ConfigureAwait(false);
+    )
+    {
+      ArgumentException.ThrowIfNullOrWhiteSpace(message);
+
+      await Task.Delay(TimeSpan.FromMilliseconds(100), cancellationToken).ConfigureAwait(false);
+    }
 
     private async Task NackMessage(BasicDeliverEventArgs args, CancellationToken stoppingToken)
     {

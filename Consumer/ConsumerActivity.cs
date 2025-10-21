@@ -33,51 +33,67 @@ namespace Consumer
       ArgumentNullException.ThrowIfNull(eventArgs);
       ArgumentNullException.ThrowIfNull(handleAsync);
 
-      var parent = _propagator.Extract(default, eventArgs.BasicProperties.Headers, ExtractHeader);
+      var headers = eventArgs.BasicProperties?.Headers;
+      var parent = _propagator.Extract(default, headers, ExtractHeader);
+      var prevBaggage = Baggage.Current;
       Baggage.Current = parent.Baggage;
 
-      using (
-        var activity = _activitySource.StartActivity(
-          spanName,
-          ActivityKind.Consumer,
-          parent.ActivityContext
-        )
-      )
+      try
       {
-        activity?.SetTag("messaging.system", "rabbitmq");
-        activity?.SetTag("messaging.destination_kind", "queue");
-        activity?.SetTag("messaging.destination.name", eventArgs.RoutingKey);
-        activity?.SetTag("messaging.operation", "process");
-
-        if (!string.IsNullOrEmpty(eventArgs.BasicProperties.MessageId))
+        using (
+          var activity = _activitySource.StartActivity(
+            spanName,
+            ActivityKind.Consumer,
+            parent.ActivityContext
+          )
+        )
         {
-          activity?.SetTag("messaging.message.id", eventArgs.BasicProperties.MessageId);
-        }
+          activity?.SetTag("messaging.system", "rabbitmq");
+          activity?.SetTag("messaging.destination_kind", "queue");
+          activity?.SetTag("messaging.destination.name", spanName);
+          activity?.SetTag("messaging.operation", "process");
 
-        _logger.LogInformation(
-          "Received {MessageId} (DeliveryTag={DeliveryTag}) from {Queue}.",
-          eventArgs.BasicProperties.MessageId ?? "no message id",
-          eventArgs.DeliveryTag,
-          eventArgs.RoutingKey
-        );
+          var messageId = eventArgs.BasicProperties?.MessageId;
 
-        if (activity is not null && enrich is not null)
-        {
-          enrich.Invoke(activity, eventArgs);
-        }
+          if (!string.IsNullOrEmpty(messageId))
+          {
+            activity?.SetTag("messaging.message.id", messageId);
+          }
 
-        try
-        {
-          var result = await handleAsync(activity, cancellationToken).ConfigureAwait(false);
-          activity?.SetStatus(ActivityStatusCode.Ok);
-          return result;
+          _logger.LogInformation(
+            "Received {MessageId} (DeliveryTag={DeliveryTag}) from {Queue}.",
+            messageId ?? "no message id",
+            eventArgs.DeliveryTag,
+            eventArgs.RoutingKey
+          );
+
+          if (activity is not null && enrich is not null)
+          {
+            enrich.Invoke(activity, eventArgs);
+          }
+
+          try
+          {
+            var result = await handleAsync(activity, cancellationToken).ConfigureAwait(false);
+            activity?.SetStatus(ActivityStatusCode.Ok);
+            return result;
+          }
+          catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+          {
+            activity?.SetStatus(ActivityStatusCode.Unset);
+            throw;
+          }
+          catch (Exception exception)
+          {
+            activity?.AddException(exception);
+            activity?.SetStatus(ActivityStatusCode.Error, exception.Message);
+            throw;
+          }
         }
-        catch (Exception exception)
-        {
-          activity?.AddException(exception);
-          activity?.SetStatus(ActivityStatusCode.Error, exception.Message);
-          throw;
-        }
+      }
+      finally
+      {
+        Baggage.Current = prevBaggage;
       }
     }
 

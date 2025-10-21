@@ -1,16 +1,17 @@
 using System.Text;
 using System.Text.Json;
 using RabbitMQ.Client;
+using RabbitMQ.Client.Events;
 using RabbitMQ.Client.Exceptions;
 
 namespace Producer
 {
   internal sealed class WeatherPublisher : IWeatherPublisher
   {
+    private const string _routingKey = "weather";
     private readonly IChannel _channel;
     private readonly ILogger<WeatherPublisher> _logger;
     private readonly PublisherActivity _publisherActivity;
-    private const string _routingKey = "weather";
 
     public WeatherPublisher(
       IChannel channel,
@@ -25,6 +26,8 @@ namespace Producer
       _channel = channel;
       _logger = logger;
       _publisherActivity = publisherActivity;
+
+      _channel.BasicReturnAsync += OnBasicReturnAsync;
     }
 
     public async Task PublishForecastAsync(
@@ -67,7 +70,7 @@ namespace Producer
                 _routingKey
               );
 
-              return false;
+              throw;
             }
           },
           enrich: activity =>
@@ -80,18 +83,18 @@ namespace Producer
           cancellationToken
         )
         .ConfigureAwait(false);
+    }
 
-      _channel.BasicReturnAsync += async (_, args) =>
-      {
-        _logger.LogError(
-          message: "RETURN {EventReplyCode} {EventReplyText} rk={EventRoutingKey}",
-          args.ReplyCode,
-          args.ReplyText,
-          args.RoutingKey
-        );
+    private async Task OnBasicReturnAsync(object? sender, BasicReturnEventArgs args)
+    {
+      _logger.LogError(
+        message: "RETURN {EventReplyCode} {EventReplyText} rk={EventRoutingKey}",
+        args.ReplyCode,
+        args.ReplyText,
+        args.RoutingKey
+      );
 
-        await Task.CompletedTask.ConfigureAwait(false);
-      };
+      await Task.CompletedTask.ConfigureAwait(false);
     }
   }
 }
