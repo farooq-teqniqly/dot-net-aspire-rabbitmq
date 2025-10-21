@@ -1,9 +1,6 @@
-using System.Data.Common;
 using System.Text;
 using System.Text.Json;
-using Dapper;
 using Microsoft.Data.SqlClient;
-using Producer.Entities;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using RabbitMQ.Client.Exceptions;
@@ -36,6 +33,7 @@ namespace Producer
 
     public async Task PublishForecastAsync(
       WeatherForecast[] weatherForecast,
+      Guid messageId,
       CancellationToken cancellationToken = default
     )
     {
@@ -45,6 +43,7 @@ namespace Producer
 
         await publisherActivity
           .PublishAsync(
+            messageId,
             "rabbitmq.publish",
             sendAsync: async (basicProperties, ct) =>
             {
@@ -96,17 +95,12 @@ namespace Producer
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-      var queryMessagesSql =
-        "SELECT TOP (2) id, type, content FROM dbo.outbox_messages WITH (READPAST) WHERE processed_on_utc IS NULL ORDER BY occurred_on_utc";
-
-      var updateSql =
-        "UPDATE dbo.outbox_messages SET processed_on_utc = @ProcessedOnUtc WHERE id = @Id";
-
       while (!stoppingToken.IsCancellationRequested)
       {
         using (var scope = _serviceScopeFactory.CreateScope())
         {
           var sqlConnection = scope.ServiceProvider.GetRequiredService<SqlConnection>();
+          var outboxRepository = scope.ServiceProvider.GetRequiredService<IOutboxRepository>();
 
           await sqlConnection.OpenAsync(stoppingToken).ConfigureAwait(false);
 
@@ -116,10 +110,8 @@ namespace Producer
 
           await using (transaction)
           {
-            _logger.LogInformation("Getting outbox messages. {CommandText}", queryMessagesSql);
-
-            var messages = await sqlConnection
-              .QueryAsync<OutboxMessage>(queryMessagesSql, transaction: transaction)
+            var messages = await outboxRepository
+              .GetUnprocessedMessagesAsync(2, transaction)
               .ConfigureAwait(false);
 
             foreach (var message in messages)
@@ -135,29 +127,27 @@ namespace Producer
                   throw new InvalidOperationException("Failed to deserialize weather forecast.");
                 }
 
-                await PublishForecastAsync(weatherForecast, stoppingToken).ConfigureAwait(false);
-
-                await sqlConnection
-                  .ExecuteAsync(
-                    updateSql,
-                    new { ProcessedOnUtc = DateTimeOffset.UtcNow, message.Id },
-                    transaction: transaction
-                  )
+                await PublishForecastAsync(weatherForecast, message.Id, stoppingToken)
                   .ConfigureAwait(false);
 
-                _logger.LogInformation(
-                  "Marking outbox message as processed. CommandText: {CommandText}",
-                  updateSql
-                );
+                await outboxRepository
+                  .MarkAsProcessedAsync(message.Id, transaction)
+                  .ConfigureAwait(false);
               }
               catch (InvalidOperationException exception)
               {
-                await SetOutboxMessageError(message.Id, exception, sqlConnection, transaction)
+                _logger.LogError(exception, "Failed to process outbox message.");
+
+                await outboxRepository
+                  .MarkAsErrorAsync(message.Id, exception.Message, transaction)
                   .ConfigureAwait(false);
               }
               catch (JsonException exception)
               {
-                await SetOutboxMessageError(message.Id, exception, sqlConnection, transaction)
+                _logger.LogError(exception, "Failed to process outbox message.");
+
+                await outboxRepository
+                  .MarkAsErrorAsync(message.Id, exception.Message, transaction)
                   .ConfigureAwait(false);
               }
             }
@@ -180,37 +170,6 @@ namespace Producer
       );
 
       await Task.CompletedTask.ConfigureAwait(false);
-    }
-
-    private async Task SetOutboxMessageError(
-      Guid messageId,
-      Exception exception,
-      SqlConnection sqlConnection,
-      DbTransaction transaction
-    )
-    {
-      _logger.LogError(exception, "Failed to process outbox message.");
-
-      var sql =
-        "UPDATE dbo.outbox_messages SET processed_on_utc = @ProcessedOnUtc, error = @Error WHERE id = @Id";
-
-      _logger.LogInformation(
-        "Marking outbox message as unprocessed. CommandText: {CommandText}",
-        sql
-      );
-
-      await sqlConnection
-        .ExecuteAsync(
-          sql,
-          new
-          {
-            ProcessedOnUtc = DateTimeOffset.UtcNow,
-            Error = exception.Message,
-            Id = messageId,
-          },
-          transaction: transaction
-        )
-        .ConfigureAwait(false);
     }
   }
 }

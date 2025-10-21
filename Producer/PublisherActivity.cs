@@ -22,6 +22,7 @@ namespace Producer
     }
 
     public async Task<TResult> PublishAsync<TResult>(
+      Guid messageId,
       string spanName,
       Func<BasicProperties, CancellationToken, Task<TResult>> sendAsync,
       Action<Activity>? enrich = null,
@@ -33,10 +34,7 @@ namespace Producer
 
       using (var activity = _activitySource.StartActivity(spanName, ActivityKind.Producer))
       {
-        var basicProperties = new BasicProperties
-        {
-          MessageId = Guid.CreateVersion7().ToString("N"),
-        };
+        var basicProperties = new BasicProperties { MessageId = messageId.ToString() };
 
         activity?.SetTag("messaging.message.id", basicProperties.MessageId);
 
