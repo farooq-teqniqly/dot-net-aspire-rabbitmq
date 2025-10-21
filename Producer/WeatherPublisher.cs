@@ -1,6 +1,5 @@
 using System.Text;
 using System.Text.Json;
-using Microsoft.Data.SqlClient;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using RabbitMQ.Client.Exceptions;
@@ -97,21 +96,17 @@ namespace Producer
     {
       while (!stoppingToken.IsCancellationRequested)
       {
-        using (var scope = _serviceScopeFactory.CreateScope())
+        await using (var scope = _serviceScopeFactory.CreateAsyncScope())
         {
-          var sqlConnection = scope.ServiceProvider.GetRequiredService<SqlConnection>();
+          var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
           var outboxRepository = scope.ServiceProvider.GetRequiredService<IOutboxRepository>();
 
-          await sqlConnection.OpenAsync(stoppingToken).ConfigureAwait(false);
+          await unitOfWork.BeginTransactionAsync(stoppingToken).ConfigureAwait(false);
 
-          var transaction = await sqlConnection
-            .BeginTransactionAsync(stoppingToken)
-            .ConfigureAwait(false);
-
-          await using (transaction)
+          await using (unitOfWork)
           {
             var messages = await outboxRepository
-              .GetUnprocessedMessagesAsync(2, transaction)
+              .GetUnprocessedMessagesAsync(2)
               .ConfigureAwait(false);
 
             foreach (var message in messages)
@@ -130,16 +125,14 @@ namespace Producer
                 await PublishForecastAsync(weatherForecast, message.Id, stoppingToken)
                   .ConfigureAwait(false);
 
-                await outboxRepository
-                  .MarkAsProcessedAsync(message.Id, transaction)
-                  .ConfigureAwait(false);
+                await outboxRepository.MarkAsProcessedAsync(message.Id).ConfigureAwait(false);
               }
               catch (InvalidOperationException exception)
               {
                 _logger.LogError(exception, "Failed to process outbox message.");
 
                 await outboxRepository
-                  .MarkAsErrorAsync(message.Id, exception.Message, transaction)
+                  .MarkAsErrorAsync(message.Id, exception.Message)
                   .ConfigureAwait(false);
               }
               catch (JsonException exception)
@@ -147,12 +140,12 @@ namespace Producer
                 _logger.LogError(exception, "Failed to process outbox message.");
 
                 await outboxRepository
-                  .MarkAsErrorAsync(message.Id, exception.Message, transaction)
+                  .MarkAsErrorAsync(message.Id, exception.Message)
                   .ConfigureAwait(false);
               }
             }
 
-            await transaction.CommitAsync(stoppingToken).ConfigureAwait(false);
+            await unitOfWork.CommitAsync(stoppingToken).ConfigureAwait(false);
           }
         }
 

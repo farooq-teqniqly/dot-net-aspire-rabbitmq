@@ -1,7 +1,5 @@
-using System.Data.Common;
 using System.Text.Json;
 using Dapper;
-using Microsoft.Data.SqlClient;
 using Producer.Entities;
 
 namespace Producer
@@ -9,14 +7,14 @@ namespace Producer
   internal sealed class OutboxRepository : IOutboxRepository
   {
     private readonly ILogger<OutboxRepository> _logger;
-    private readonly SqlConnection _sqlConnection;
+    private readonly IUnitOfWork _unitOfWork;
 
-    public OutboxRepository(SqlConnection sqlConnection, ILogger<OutboxRepository> logger)
+    public OutboxRepository(IUnitOfWork unitOfWork, ILogger<OutboxRepository> logger)
     {
-      ArgumentNullException.ThrowIfNull(sqlConnection);
+      ArgumentNullException.ThrowIfNull(unitOfWork);
       ArgumentNullException.ThrowIfNull(logger);
 
-      _sqlConnection = sqlConnection;
+      _unitOfWork = unitOfWork;
       _logger = logger;
     }
 
@@ -32,8 +30,8 @@ namespace Producer
       var sql =
         "INSERT INTO dbo.outbox_messages (id, content, occurred_on_utc) VALUES (@Id, @Content, @OccurredOnUtc)";
 
-      var rowsInserted = await _sqlConnection
-        .ExecuteAsync(sql, outboxMessage)
+      var rowsInserted = await _unitOfWork
+        .Transaction.Connection!.ExecuteAsync(sql, outboxMessage, transaction: _unitOfWork.Transaction)
         .ConfigureAwait(false);
 
       if (rowsInserted < 1)
@@ -48,34 +46,27 @@ namespace Producer
       );
     }
 
-    public async Task<IEnumerable<OutboxMessage>> GetUnprocessedMessagesAsync(
-      int limit,
-      DbTransaction transaction
-    )
+    public async Task<IEnumerable<OutboxMessage>> GetUnprocessedMessagesAsync(int limit)
     {
       var sql =
         $"SELECT TOP ({limit}) id, content FROM dbo.outbox_messages WITH (READPAST) WHERE processed_on_utc IS NULL ORDER BY occurred_on_utc";
 
       _logger.LogInformation("Getting outbox messages. {CommandText}", sql);
 
-      var messages = await transaction
-        .Connection!.QueryAsync<OutboxMessage>(sql, transaction: transaction)
+      var messages = await _unitOfWork
+        .Transaction.Connection!.QueryAsync<OutboxMessage>(sql, transaction: _unitOfWork.Transaction)
         .ConfigureAwait(false);
 
       return messages;
     }
 
-    public async Task MarkAsErrorAsync(
-      Guid messageId,
-      string errorMessage,
-      DbTransaction transaction
-    )
+    public async Task MarkAsErrorAsync(Guid messageId, string errorMessage)
     {
       var sql =
         "UPDATE dbo.outbox_messages SET processed_on_utc = @ProcessedOnUtc, error = @Error WHERE id = @Id";
 
-      await transaction
-        .Connection!.ExecuteAsync(
+      await _unitOfWork
+        .Transaction.Connection!.ExecuteAsync(
           sql,
           new
           {
@@ -83,22 +74,22 @@ namespace Producer
             Error = errorMessage,
             Id = messageId,
           },
-          transaction: transaction
+          transaction: _unitOfWork.Transaction
         )
         .ConfigureAwait(false);
 
       _logger.LogInformation("Marked outbox message as error. CommandText: {CommandText}", sql);
     }
 
-    public async Task MarkAsProcessedAsync(Guid messageId, DbTransaction transaction)
+    public async Task MarkAsProcessedAsync(Guid messageId)
     {
       var sql = "UPDATE dbo.outbox_messages SET processed_on_utc = @ProcessedOnUtc WHERE id = @Id";
 
-      await _sqlConnection
-        .ExecuteAsync(
+      await _unitOfWork
+        .Transaction.Connection!.ExecuteAsync(
           sql,
           new { ProcessedOnUtc = DateTimeOffset.UtcNow, Id = messageId },
-          transaction: transaction
+          transaction: _unitOfWork.Transaction
         )
         .ConfigureAwait(false);
 
