@@ -21,21 +21,17 @@ public class WeatherForecastController : ControllerBase
     "Scorching",
   ];
 
-  private readonly IWeatherPublisher _weatherPublisher;
   private readonly IOutboxRepository _outboxRepository;
   private readonly ILogger<WeatherForecastController> _logger;
 
   public WeatherForecastController(
-    IWeatherPublisher weatherPublisher,
     IOutboxRepository outboxRepository,
     ILogger<WeatherForecastController> logger
   )
   {
-    ArgumentNullException.ThrowIfNull(weatherPublisher);
     ArgumentNullException.ThrowIfNull(outboxRepository);
     ArgumentNullException.ThrowIfNull(logger);
 
-    _weatherPublisher = weatherPublisher;
     _outboxRepository = outboxRepository;
     _logger = logger;
   }
@@ -54,13 +50,6 @@ public class WeatherForecastController : ControllerBase
       .ToArray();
 
     await _outboxRepository.AddToOutboxAsync(forecast).ConfigureAwait(false);
-
-    using (var cancellationTokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
-    {
-      //await _weatherPublisher
-      //  .PublishForecastAsync(forecast, cancellationTokenSource.Token)
-      //  .ConfigureAwait(false);
-    }
 
     return Ok(forecast);
   }

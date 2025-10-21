@@ -80,7 +80,7 @@ internal sealed class Program
       return new PublisherActivity(new ActivitySource(builder.Environment.ApplicationName), logger);
     });
 
-    builder.Services.AddScoped<IWeatherPublisher, WeatherPublisher>();
+    builder.Services.AddHostedService<WeatherPublisher>();
     builder.Services.AddScoped<IOutboxRepository, OutboxRepository>();
 
     var app = builder.Build();
