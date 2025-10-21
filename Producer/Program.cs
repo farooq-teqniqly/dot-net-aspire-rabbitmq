@@ -30,6 +30,24 @@ internal sealed class Program
       return connectionFactory.CreateConnectionAsync().GetAwaiter().GetResult();
     });
 
+    var queueName = "weather";
+
+    builder.Services.Configure<PublisherOptions>(opts =>
+    {
+      var section = builder.Configuration.GetSection(PublisherOptions.SectionName);
+
+      if (section.Exists())
+      {
+        section.Bind(opts);
+      }
+      else
+      {
+        opts.Period = TimeSpan.FromSeconds(60);
+        opts.QueueName = queueName;
+        queueName = opts.QueueName;
+      }
+    });
+
     builder.Services.AddSingleton<IChannel>(serviceProvider =>
     {
       var connection = serviceProvider.GetRequiredService<IConnection>();
@@ -41,8 +59,6 @@ internal sealed class Program
       );
 
       var channel = connection.CreateChannelAsync(channelOpts).GetAwaiter().GetResult();
-
-      const string queueName = "weather";
 
       channel
         .QueueDeclareAsync(queueName, durable: true, exclusive: false, autoDelete: false)
@@ -79,20 +95,6 @@ internal sealed class Program
     {
       var logger = serviceProvider.GetRequiredService<ILogger<PublisherActivity>>();
       return new PublisherActivity(new ActivitySource(builder.Environment.ApplicationName), logger);
-    });
-
-    builder.Services.Configure<PublisherOptions>(opts =>
-    {
-      var section = builder.Configuration.GetSection(PublisherOptions.SectionName);
-
-      if (section.Exists())
-      {
-        section.Bind(opts);
-      }
-      else
-      {
-        opts.Period = TimeSpan.FromSeconds(60);
-      }
     });
 
     builder.Services.AddHostedService<WeatherPublisher>();

@@ -5,5 +5,6 @@ namespace Producer.Settings
     public const string SectionName = "Publisher";
 
     public required TimeSpan Period { get; set; }
+    public required string QueueName { get; set; }
   }
 }
