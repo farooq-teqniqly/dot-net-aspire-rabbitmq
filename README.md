@@ -384,6 +384,166 @@ docker logs <container-id>
 
 ## 📝 Development Guide
 
+### Creating EF Core Migrations
+
+When you modify database entities or add new ones, you need to create and apply migrations.
+
+#### Prerequisites
+
+Install the EF Core tools if not already installed:
+
+```bash
+dotnet tool install --global dotnet-ef
+# Or update if already installed
+dotnet tool update --global dotnet-ef
+```
+
+#### Creating a New Migration
+
+1. **Navigate to the Producer project directory**
+
+   ```bash
+   cd Producer
+   ```
+
+2. **Create the migration**
+
+   ```bash
+   dotnet ef migrations add YourMigrationName --context ProducerDbContext --project Producer --output-dir Database\Migrations
+   ```
+
+3. **Review the generated migration** in `Database/Migrations/`
+
+   - Check the `Up()` method for forward migration
+   - Check the `Down()` method for rollback
+   - Verify the changes match your intent
+
+4. **Apply the migration**
+
+   ```bash
+   dotnet ef database update
+   ```
+
+   > **Note:** In development mode, migrations are automatically applied when the application starts (see `Program.cs` → `ApplyMigrationsAsync()`). You only need to manually apply migrations if:
+   >
+   > - You're not running the full application
+   > - You're testing migrations in isolation
+   > - You're deploying to production (use SQL scripts instead)
+
+#### Common Migration Scenarios
+
+**Adding a new property to OutboxMessage:**
+
+```csharp
+// 1. Modify the entity
+public class OutboxMessage
+{
+    public Guid Id { get; set; }
+    public string Content { get; set; } = null!;
+    public DateTimeOffset OccurredOnUtc { get; set; }
+    public DateTimeOffset? ProcessedOnUtc { get; set; }
+    public string? Error { get; set; }
+    public int RetryCount { get; set; } = 0;  // New property
+}
+
+// 2. Create migration
+dotnet ef migrations add AddRetryCountToOutboxMessage
+
+// 3. Apply migration
+dotnet ef database update
+```
+
+**Creating a new table:**
+
+```csharp
+// 1. Create entity
+public class ProcessingLog
+{
+    public Guid Id { get; set; }
+    public Guid MessageId { get; set; }
+    public string Status { get; set; } = null!;
+    public DateTimeOffset Timestamp { get; set; }
+}
+
+// 2. Add DbSet to ProducerDbContext
+public class ProducerDbContext : DbContext
+{
+    public DbSet<OutboxMessage> OutboxMessages { get; set; }
+    public DbSet<ProcessingLog> ProcessingLogs { get; set; }  // New
+}
+
+// 3. Create migration
+dotnet ef migrations add AddProcessingLogTable
+
+// 4. Apply migration
+dotnet ef database update
+```
+
+#### Migration Management Commands
+
+```bash
+# List all migrations
+dotnet ef migrations list
+
+# Remove the last migration (if not yet applied)
+dotnet ef migrations remove
+
+# Rollback to a specific migration
+dotnet ef database update PreviousMigrationName
+
+# Generate SQL script instead of applying
+dotnet ef migrations script
+
+# Generate SQL for specific migration range
+dotnet ef migrations script FromMigration ToMigration
+
+# Drop database (development only!)
+dotnet ef database drop
+```
+
+#### Best Practices
+
+1. **Descriptive names**: Use clear migration names like `AddUserEmailIndex` not `Migration1`
+2. **Review before applying**: Always review generated migrations
+3. **Test rollbacks**: Ensure `Down()` method properly reverses changes
+4. **Small migrations**: Create focused migrations for easier troubleshooting
+5. **Backup data**: Always backup production data before applying migrations
+6. **Script for production**: Generate SQL scripts for production deployments
+
+```bash
+# Generate production script
+dotnet ef migrations script --output migration.sql
+```
+
+#### Troubleshooting Migrations
+
+**Error: "No migrations found"**
+
+```bash
+# Ensure you're in the correct directory
+cd Producer
+# Check your connection string
+dotnet ef database update --verbose
+```
+
+**Error: "Unable to create migration"**
+
+```bash
+# Build the project first
+dotnet build
+# Then create migration
+dotnet ef migrations add MigrationName
+```
+
+**Error: "Migration already applied"**
+
+```bash
+# Check migration history
+dotnet ef migrations list
+# Remove from history if needed (development only)
+DELETE FROM __EFMigrationsHistory WHERE MigrationId = 'problematic_migration'
+```
+
 ### Adding a New Message Type
 
 1. **Create entity class**
