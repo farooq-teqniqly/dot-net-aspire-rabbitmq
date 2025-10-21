@@ -53,6 +53,27 @@ internal sealed class Program
       }
     });
 
+    var defaultBatchSize = 100;
+
+    builder.Services.Configure<OutboxOptions>(opts =>
+    {
+      var section = builder.Configuration.GetSection(OutboxOptions.SectionName);
+
+      if (section.Exists())
+      {
+        section.Bind(opts);
+
+        if (opts.BatchSize < 1)
+        {
+          opts.BatchSize = defaultBatchSize;
+        }
+      }
+      else
+      {
+        opts.BatchSize = defaultBatchSize;
+      }
+    });
+
     builder.Services.AddSingleton<IChannel>(serviceProvider =>
     {
       var connection = serviceProvider.GetRequiredService<IConnection>();

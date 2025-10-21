@@ -12,24 +12,28 @@ namespace Producer
   {
     private readonly IChannel _channel;
     private readonly ILogger<WeatherPublisher> _logger;
+    private readonly OutboxOptions _outboxOptions;
+    private readonly PublisherOptions _publisherOptions;
     private readonly IServiceScopeFactory _serviceScopeFactory;
     private PublisherConfirmationTracker _confirmationTracker = null!;
-    private readonly PublisherOptions _publisherOptions;
 
     public WeatherPublisher(
       IOptions<PublisherOptions> publisherOptions,
+      IOptions<OutboxOptions> outboxOptions,
       IChannel channel,
       ILogger<WeatherPublisher> logger,
       IServiceScopeFactory serviceScopeFactory
     )
     {
       ArgumentNullException.ThrowIfNull(publisherOptions);
+      ArgumentNullException.ThrowIfNull(outboxOptions);
       ArgumentNullException.ThrowIfNull(channel);
       ArgumentNullException.ThrowIfNull(logger);
       ArgumentNullException.ThrowIfNull(serviceScopeFactory);
 
       _channel = channel;
       _publisherOptions = publisherOptions.Value;
+      _outboxOptions = outboxOptions.Value;
       _logger = logger;
       _serviceScopeFactory = serviceScopeFactory;
 
@@ -171,7 +175,7 @@ namespace Producer
           await using (unitOfWork)
           {
             var messages = await outboxRepository
-              .GetUnprocessedMessagesAsync(2)
+              .GetUnprocessedMessagesAsync(_outboxOptions.BatchSize)
               .ConfigureAwait(false);
 
             foreach (var message in messages)

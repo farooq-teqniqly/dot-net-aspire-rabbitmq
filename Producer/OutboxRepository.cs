@@ -31,7 +31,11 @@ namespace Producer
         "INSERT INTO dbo.outbox_messages (id, content, occurred_on_utc) VALUES (@Id, @Content, @OccurredOnUtc)";
 
       var rowsInserted = await _unitOfWork
-        .Transaction.Connection!.ExecuteAsync(sql, outboxMessage, transaction: _unitOfWork.Transaction)
+        .Transaction.Connection!.ExecuteAsync(
+          sql,
+          outboxMessage,
+          transaction: _unitOfWork.Transaction
+        )
         .ConfigureAwait(false);
 
       if (rowsInserted < 1)
@@ -46,15 +50,18 @@ namespace Producer
       );
     }
 
-    public async Task<IEnumerable<OutboxMessage>> GetUnprocessedMessagesAsync(int limit)
+    public async Task<IEnumerable<OutboxMessage>> GetUnprocessedMessagesAsync(int batchSize)
     {
       var sql =
-        $"SELECT TOP ({limit}) id, content FROM dbo.outbox_messages WITH (READPAST) WHERE processed_on_utc IS NULL ORDER BY occurred_on_utc";
+        $"SELECT TOP ({batchSize}) id, content FROM dbo.outbox_messages WITH (READPAST) WHERE processed_on_utc IS NULL ORDER BY occurred_on_utc";
 
       _logger.LogInformation("Getting outbox messages. {CommandText}", sql);
 
       var messages = await _unitOfWork
-        .Transaction.Connection!.QueryAsync<OutboxMessage>(sql, transaction: _unitOfWork.Transaction)
+        .Transaction.Connection!.QueryAsync<OutboxMessage>(
+          sql,
+          transaction: _unitOfWork.Transaction
+        )
         .ConfigureAwait(false);
 
       return messages;
