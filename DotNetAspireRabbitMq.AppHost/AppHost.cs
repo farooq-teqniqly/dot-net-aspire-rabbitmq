@@ -13,7 +13,19 @@ if (builder.ExecutionContext.IsRunMode)
   rabbitMq.WithManagementPlugin();
 }
 
-builder.AddProject<Projects.Producer>("producer").WithReference(rabbitMq).WaitFor(rabbitMq);
+var sql = builder
+  .AddSqlServer("sql")
+  .WithLifetime(ContainerLifetime.Persistent)
+  .WithImage("mssql/server:2022-CU21-ubuntu-22.04");
+
+var db = sql.AddDatabase("producerdb", "producer");
+
+builder
+  .AddProject<Projects.Producer>("producer")
+  .WithReference(rabbitMq)
+  .WaitFor(rabbitMq)
+  .WithReference(db)
+  .WaitFor(db);
 
 builder.AddProject<Projects.Consumer>("consumer").WithReference(rabbitMq).WaitFor(rabbitMq);
 

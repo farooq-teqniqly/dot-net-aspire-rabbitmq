@@ -4,6 +4,7 @@ namespace Producer
   {
     Task PublishForecastAsync(
       WeatherForecast[] weatherForecast,
+      Guid messageId,
       CancellationToken cancellationToken = default
     );
   }

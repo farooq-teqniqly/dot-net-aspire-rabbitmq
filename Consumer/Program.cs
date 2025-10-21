@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Consumer.Settings;
 using DotNetAspireRabbitMq.ServiceDefaults;
 using RabbitMQ.Client;
 
@@ -26,13 +27,33 @@ internal sealed class Program
       return connectionFactory.CreateConnectionAsync().GetAwaiter().GetResult();
     });
 
+    var queueName = "weather";
+
+    builder.Services.Configure<ConsumerOptions>(opts =>
+    {
+      var section = builder.Configuration.GetSection(ConsumerOptions.SectionName);
+
+      if (section.Exists())
+      {
+        section.Bind(opts);
+
+        if (string.IsNullOrWhiteSpace(opts.QueueName))
+        {
+          opts.QueueName = queueName;
+        }
+      }
+      else
+      {
+        opts.QueueName = queueName;
+        queueName = opts.QueueName;
+      }
+    });
+
     builder.Services.AddSingleton<IChannel>(serviceProvider =>
     {
       var connection = serviceProvider.GetRequiredService<IConnection>();
 
       var channel = connection.CreateChannelAsync().GetAwaiter().GetResult();
-
-      const string queueName = "weather";
 
       channel
         .QueueDeclareAsync(queueName, durable: true, exclusive: false, autoDelete: false)
